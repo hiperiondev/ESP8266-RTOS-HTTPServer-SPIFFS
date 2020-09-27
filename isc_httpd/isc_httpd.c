@@ -32,6 +32,7 @@ static const char *TAG = "isc_httpd";
 #define HTTP_SERVER_PORT 80
 
 char filename[64];
+struct http_session httpd_sess;
 
 static int http_send(int s, const char *buf, int len, int flags) {
     return send(s, buf, len, flags);
@@ -60,12 +61,13 @@ static int cgi_request_handler(struct http_session *p, char *path, char *args) {
 */
 
 static void isc_httpd_task(void *pvParameters) {
-    struct http_session httpd;
+    struct http_session *httpd =  (struct http_session *)pvParameters;
     struct sockaddr_in addr;
     int server_socket;
     int optval = 1;
     esp_err_t err;
     tcpip_adapter_ip_info_t ip_info;
+    bool http_auth = httpd->http_use_auth;
 
     server_socket = socket(AF_INET, SOCK_STREAM, 0);
 
@@ -88,9 +90,6 @@ static void isc_httpd_task(void *pvParameters) {
     http_init(httpd_open, httpd_read, httpd_close, http_send);
     //http_attach_cgi_handler(cgi_request_handler);
 
-    sprintf(httpd.http_username, "admin");
-    sprintf(httpd.http_password, "admin");
-
     memset(&addr, 0x00, sizeof(addr));
 
     while (1) {
@@ -102,13 +101,14 @@ static void isc_httpd_task(void *pvParameters) {
         if (s >= 0) {
             int res;
             ESP_LOGI(TAG, "http_new_connection");
-            http_new_connection(&httpd, (int) s);
-            //httpd.http_use_auth = 1;
+            http_new_connection(httpd, (int) s);
+            if(http_auth)
+                httpd->http_use_auth = 1;
             ESP_LOGI(TAG, "new_connection");
             while ((res = recv(s, buffer, sizeof(buffer) - 1, 0)) > 0) {
                 ESP_LOGI(TAG, "recv");
                 buffer[res] = '\0';
-                if (http_process_data(&httpd, buffer, res))
+                if (http_process_data(httpd, buffer, res))
                     continue;
                 else
                     break;
@@ -121,12 +121,16 @@ static void isc_httpd_task(void *pvParameters) {
     vTaskDelete(NULL);
 }
 
-void isc_httpd_start(void) {
+void isc_httpd_start(bool auth, char* username, char* password) {
+    sprintf(httpd_sess.http_username, username);
+    sprintf(httpd_sess.http_password, password);
+    httpd_sess.http_use_auth = auth;
+
     xTaskCreate(
             isc_httpd_task,
             "isc_httpd_task",
             8192,
-            NULL,
+            &httpd_sess,
             12,
             NULL);
 }

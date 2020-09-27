@@ -18,6 +18,6 @@
 #ifndef _ISC_HTTPD_H_
 #define _ISC_HTTPD_H_
 
-void isc_httpd_start(void);
+void isc_httpd_start(bool auth, char* username, char* password);
 
 #endif
